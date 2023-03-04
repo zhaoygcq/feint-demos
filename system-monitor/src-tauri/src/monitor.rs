@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use battery::{Battery, Manager};
-use sysinfo::{Component, ComponentExt, CpuExt, Disk, Process, ProcessExt, System, SystemExt};
+use sysinfo::{Component, ComponentExt, CpuExt, Disk, Process, ProcessExt, System, SystemExt, NetworkExt };
 
+static mut TOTAL_DOWN: i32 = 0;
+static mut TOTAL_UP: i32 = 0;
 #[derive(serde::Serialize, Default)]
 pub struct SysMonitorData {
     host: HostData,
@@ -161,6 +163,7 @@ impl DiskData {
     }
 }
 
+
 #[tauri::command]
 pub fn system_info() -> SysMonitorData {
     let mut sys = System::new_all();
@@ -228,16 +231,38 @@ pub fn battery_info() -> BatteryData {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn update_tray_title(app: tauri::AppHandle) -> bool {
-
+    
     let mut sys = System::new_all();
+    // Network interfaces name, data received and data transmitted:
+    let networks = sys.networks();
+    let mut total_down_arr: Vec<i32> = Vec::new();
+    let mut total_up_arr: Vec<i32>= Vec::new();
+    for (_, data) in networks {
+        total_down_arr.push(data.total_received() as i32);
+        total_up_arr.push(data.total_transmitted() as i32);
+    }
+    let total_down: i32 = total_down_arr.iter().sum();
+    let total_up: i32 = total_up_arr.iter().sum();
+    let mut up_speed = 0;
+    let mut down_speed = 0;
+    unsafe {
+        if TOTAL_DOWN != 0 && TOTAL_UP != 0 {
+            up_speed = ((total_up - TOTAL_UP) / 128) as i32;
+            down_speed = ((total_down - TOTAL_DOWN) / 128) as i32;
+        }
+        TOTAL_DOWN = total_down;
+        TOTAL_UP = total_up;    
+    }
     sys.refresh_cpu();
     sys.refresh_memory();
     app.tray_handle()
         .set_title(
             format!(
-                "| cpu: {:.0}% | mem: {:.2}GB",
+                "| cpu: {:.0}% | mem: {:.2}GB | down: {}kb/s | up: {}kb/s",
                 sys.global_cpu_info().cpu_usage(),
-                MemoryData::format_memory(sys.used_memory() + sys.used_swap())
+                MemoryData::format_memory(sys.used_memory() + sys.used_swap()),
+                down_speed,
+                up_speed
             )
             .as_str(),
         )

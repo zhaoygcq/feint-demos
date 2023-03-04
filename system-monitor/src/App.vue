@@ -26,7 +26,7 @@ onMounted(async () => {
         }
     });
 
-    setInterval(flushTray(), 5000);
+    setInterval(flushTray(), 1000);
 })
 onUnmounted(() => {
     unListens.blur();
